@@ -18,6 +18,7 @@ resolution = "512"
 train_batch_size = 1
 num_epochs = 5
 seed = 42
+console_log_interval = 10
 
 # =========================
 # LoRA
