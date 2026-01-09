@@ -43,7 +43,7 @@ services:
       [
         "bash",
         "-lc",
-        "cd /opt/sd-scripts && accelerate launch train_network.py --config_file /workspace/configs/lora/char_lora.toml",
+        "run_lora char /workspace/configs/lora/char_lora.toml /workspace/datasets/normalized/characters \"${DATASET_SET:-}\"",
       ]
 
   # =========================
@@ -78,5 +78,5 @@ services:
       [
         "bash",
         "-lc",
-        "cd /opt/sd-scripts && accelerate launch train_network.py --config_file /workspace/configs/lora/style_lora.toml",
+        "run_lora style /workspace/configs/lora/style_lora.toml /workspace/datasets/normalized/style \"${DATASET_SET:-}\"",
       ]

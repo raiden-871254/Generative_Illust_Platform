@@ -17,6 +17,10 @@ RUN git clone --depth 1 https://github.com/kohya-ss/sd-scripts.git
 
 WORKDIR /opt/sd-scripts
 
+# helper script for dynamic output_name
+COPY run_lora.sh /usr/local/bin/run_lora
+RUN chmod +x /usr/local/bin/run_lora
+
 # sd-scripts requirements (torch is NOT included by design)
 # (必要に応じてバージョン固定は運用で)
 RUN pip install --upgrade pip && \
