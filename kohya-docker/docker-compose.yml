@@ -1,19 +1,28 @@
-# kohya-docker/docker-compose.yml
+version: "3.9"
+
 services:
-  kohya:
+  # =========================
+  # Image build base
+  # =========================
+  kohya-base:
     build:
       context: .
       dockerfile: Dockerfile
     image: kohya-sd-scripts:local
-    container_name: kohya-sd-scripts
-    working_dir: /workspace
+    profiles: ["build"]
+
+  # =========================
+  # Character LoRA
+  # =========================
+  kohya-char:
+    image: kohya-sd-scripts:local
+    container_name: kohya-lora-char
+    profiles: ["char"]
+
+    gpus: all
     tty: true
     stdin_open: true
-
-    # NVIDIA GPU を使う（Docker側に nvidia-container-toolkit が入っている前提）
-    gpus: all
-
-    # 生成物のパーミッション事故を避ける（Linux想定）
+    working_dir: /workspace
     user: "${UID:-1000}:${GID:-1000}"
 
     environment:
@@ -24,14 +33,50 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
     volumes:
-      # 学習データ
       - ../datasets:/workspace/datasets
-      # モデル置き場（checkpoints / lora / vae）
       - ../models:/workspace/models
-      # 出力（学習済みLoRAなど）
       - ../output:/workspace/output
-      # 設定（任意）
       - ../configs:/workspace/configs
-
-      # キャッシュ（リポジトリ配下に閉じる）
       - ../.cache:/workspace/.cache
+
+    command:
+      [
+        "bash",
+        "-lc",
+        "cd /opt/sd-scripts && accelerate launch train_network.py --config_file /workspace/configs/lora/char_lora.toml",
+      ]
+
+  # =========================
+  # Style LoRA
+  # =========================
+  kohya-style:
+    image: kohya-sd-scripts:local
+    container_name: kohya-lora-style
+    profiles: ["style"]
+
+    gpus: all
+    tty: true
+    stdin_open: true
+    working_dir: /workspace
+    user: "${UID:-1000}:${GID:-1000}"
+
+    environment:
+      - HF_HOME=/workspace/.cache/huggingface
+      - TORCH_HOME=/workspace/.cache/torch
+      - TRANSFORMERS_CACHE=/workspace/.cache/huggingface
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    volumes:
+      - ../datasets:/workspace/datasets
+      - ../models:/workspace/models
+      - ../output:/workspace/output
+      - ../configs:/workspace/configs
+      - ../.cache:/workspace/.cache
+
+    command:
+      [
+        "bash",
+        "-lc",
+        "cd /opt/sd-scripts && accelerate launch train_network.py --config_file /workspace/configs/lora/style_lora.toml",
+      ]

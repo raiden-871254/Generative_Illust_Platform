@@ -1,7 +1,7 @@
 # =========================
 # Model
 # =========================
-pretrained_model_name_or_path = "/home/raiden/ai/models/checkpoints/meinamix_v12Final.safetensors"
+pretrained_model_name_or_path = "/workspace/models/checkpoints/meinamix_v12Final.safetensors"
 
 # =========================
 # Dataset / Output

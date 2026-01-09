@@ -1,5 +1,5 @@
 # kohya-docker/Dockerfile
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -20,6 +20,7 @@ WORKDIR /opt/sd-scripts
 # sd-scripts requirements (torch is NOT included by design)
 # (必要に応じてバージョン固定は運用で)
 RUN pip install --upgrade pip && \
+    pip install "numpy<2" && \
     pip install -r requirements.txt
 
 # accelerate は train_network.py を叩くときに使うことが多いので入れておく
