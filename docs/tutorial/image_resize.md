@@ -9,7 +9,7 @@ LoRA学習向けに画像を前処理するためのスクリプトです。
 ```bash
 python scripts/resize_dataset.py \
   --input datasets/raw \
-  --output normalized \
+  --output datasets/normalized \
   --target-long 768 \
   --min-short 512 \
   --max-ar 2.2 \
@@ -17,7 +17,7 @@ python scripts/resize_dataset.py \
 ```
 
 - `--input` を省略すると `datasets/raw` が使われます。
-- `--output` を省略すると `normalized` が使われます。
+- `--output` を省略すると `datasets/normalized` が使われます。
 - 出力先が存在しない場合は自動で作成されます。
 
 ## 仕様
@@ -36,6 +36,14 @@ python scripts/resize_dataset.py \
   - 入力のディレクトリ構成を維持して `output` に保存します。
   - 入力が PNG の場合は PNG のまま保存します。
   - それ以外は JPG で保存します（品質 95、progressive）。
+- 上書き
+  - 出力先の同名ディレクトリが存在する場合は確認を求めます。
+  - `-y` を指定すると確認なしで上書きします。
+- 番号割当（datasets/raw 配下のみ）
+  - `datasets/raw/characters/<set>` と `datasets/raw/style/<set>` を対象に番号を付与します。
+  - `<set>` が数字で始まらない場合、出力先は `<N>_<set>` になります。
+  - 1〜127の未使用番号を優先し、枯渇時は128以降を割当てます（警告あり）。
+  - 先頭が数字のフォルダはそのまま扱います。番号衝突時は後から来た方に再割当します。
 - 例外・拒否ログ
   - `preprocess_log.csv` を出力先直下に作成します。
   - `--rejected` を指定すると、除外された画像を指定先にコピーします。
@@ -49,5 +57,5 @@ python scripts/resize_dataset.py \
 - `--min-short`: 最小辺の下限（デフォルト 512）
 - `--max-ar`: 許容アスペクト比の上限（デフォルト 2.2）
 - `--convert-rgb`: RGB/RGBAに変換して保存（モード問題の回避用）
+- `-y`, `--yes`: 既存の出力ディレクトリを確認なしで上書き
 - `--rejected`: 除外画像のコピー先
-
