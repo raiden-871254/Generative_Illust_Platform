@@ -4,7 +4,7 @@ services:
     ports:
       - "8188:8188"
     volumes:
-      - ~/ai/models:/root/ComfyUI/models
+      - ./../models:/root/ComfyUI/models
       - ./../output:/root/ComfyUI/output
       # 任意：Managerで入れたcustom_nodesをホストに残したいなら
       - ./custom_nodes:/root/ComfyUI/custom_nodes
