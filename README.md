@@ -1,0 +1,2 @@
+# Generative_Illust_Platform
+Stable Diffusionでイラストを生成するための汎用プラットフォーム
