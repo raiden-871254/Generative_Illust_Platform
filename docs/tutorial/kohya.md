@@ -5,14 +5,27 @@ kohya-ss/sd-scripts を Docker で動かす手順と、設定ファイルの要�
 ## Docker ビルド
 
 ```bash
-cd kohya-docker
-
 docker compose --profile build build
 ```
 
 > `profile` を使っているため、通常の `docker compose build` では対象がなく警告になります。
 
 ## 起動方法
+
+`scripts/run_lora.bash` を使うと、実行時に学習対象のセット名を指定できます。
+
+```bash
+# Character LoRA
+./scripts/run_lora.bash --profile char --input 1_cyrene
+
+# Style LoRA
+./scripts/run_lora.bash --profile style --input 1_ponnyu
+
+# 追加オプションを渡す場合
+./scripts/run_lora.bash --profile char -- --build
+```
+
+Docker Composeを直接使う場合は以下です。
 
 ```bash
 # Character LoRA
@@ -83,4 +96,3 @@ datasets/normalized/characters/
 ```
 
 `train_data_dir` には、画像フォルダの親ディレクトリを指定します。
-
