@@ -1,0 +1,27 @@
+[project]
+name = "generative-illust-platform"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[dependency-groups]
+dev = ["ruff>=0.14.11"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "B",
+    "UP",
+] # 例：flake8系 + isort(I) + bugbear(B) + pyupgrade(UP)
+ignore = []
+
+[tool.ruff.format]
+quote-style = "double"
