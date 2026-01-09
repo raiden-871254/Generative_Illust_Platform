@@ -6,8 +6,8 @@ services:
   # =========================
   kohya-base:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: kohya-docker/Dockerfile
     image: kohya-sd-scripts:local
     profiles: ["build"]
 
