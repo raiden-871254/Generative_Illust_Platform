@@ -211,3 +211,6 @@ datasets/raw/
 datasets/normalized/
 datasets/pickled/
 datasets/staging/
+
+# outputs
+outputs/
