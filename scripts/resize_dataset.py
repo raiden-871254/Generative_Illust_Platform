@@ -22,13 +22,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Tuple
 
 from PIL import Image, ImageOps
 from tqdm import tqdm
-
 
 IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -51,7 +49,7 @@ def compute_target_size(
     h: int,
     target_long: int,
     multiple: int,
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     """
     Resize to make long side ~= target_long while keeping aspect ratio,
     then round both sides to nearest 'multiple' (64 by default).
@@ -94,7 +92,7 @@ def process_one(
     min_short: int,
     max_ar: float,
     convert_rgb: bool,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Returns (ok, reason). If ok=True, saved to dst. If False, not saved.
     """
@@ -162,9 +160,7 @@ def main() -> int:
         default=None,
         help="Input directory (images recursively).",
     )
-    ap.add_argument(
-        "--output", type=Path, default=None, help="Output directory."
-    )
+    ap.add_argument("--output", type=Path, default=None, help="Output directory.")
     ap.add_argument(
         "--target-long",
         type=int,
@@ -205,14 +201,12 @@ def main() -> int:
     project_root = script_dir.parent
 
     input_dir = (
-        args.input
-        if args.input is not None
-        else (project_root / "datasets" / "raw")
+        args.input if args.input is not None else (project_root / "datasets" / "raw")
     )
     output_dir = (
         args.output
         if args.output is not None
-        else (project_root / "normalized")
+        else (project_root / "datasets" / "normalized")
     )
     rejected_dir = args.rejected
 
