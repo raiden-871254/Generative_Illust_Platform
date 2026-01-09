@@ -206,8 +206,18 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# models
+models/
+
 # datasets
-datasets/raw/
-datasets/normalized/
-datasets/pickled/
-datasets/staging/
+datasets/raw/*
+datasets/normalized/*
+datasets/pickled/*
+datasets/staging/*
+
+# comfy ui custom guis
+configs/gui/*
+!configs/gui/MeinaMix_v12_sample.json
+
+# illust output
+output/*
