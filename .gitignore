@@ -212,5 +212,5 @@ datasets/normalized/
 datasets/pickled/
 datasets/staging/
 
-# outputs
-outputs/
+# illust output
+output/
