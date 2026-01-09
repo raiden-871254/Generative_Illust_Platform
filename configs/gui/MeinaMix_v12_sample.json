@@ -1,0 +1,256 @@
+{
+  "id": "0dabaf7b-305a-4ee6-b111-54c847d7c2e2",
+  "revision": 0,
+  "last_node_id": 9,
+  "last_link_id": 9,
+  "nodes": [
+    {
+      "id": 9,
+      "type": "CheckpointLoaderSimple",
+      "pos": [-466.39962454545565, 284.93545454545466],
+      "size": [270, 98],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [1]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [2, 3]
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [4]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": ["meinamix_v12Final.safetensors"]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [334.3113054545447, 529.377494545455],
+      "size": [140, 46],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 8
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 4
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [9]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 7,
+      "type": "SaveImage",
+      "pos": [616.5400454545472, 193.93545454545443],
+      "size": [270, 270],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 9
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0"
+      },
+      "widgets_values": ["nsfw_test"]
+    },
+    {
+      "id": 6,
+      "type": "KSampler",
+      "pos": [283.1366654545445, 204.72680454545417],
+      "size": [270, 262],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 7
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 6
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [8]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        390709346366201,
+        "randomize",
+        20,
+        6,
+        "euler",
+        "simple",
+        1
+      ]
+    },
+    {
+      "id": 5,
+      "type": "EmptyLatentImage",
+      "pos": [-133.93494454545535, 731.6148645454551],
+      "size": [270, 106],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [5]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "EmptyLatentImage"
+      },
+      "widgets_values": [512, 744, 50]
+    },
+    {
+      "id": 4,
+      "type": "CLIPTextEncode",
+      "pos": [-180.66895909090962, 441.5479827272725],
+      "size": [400, 200],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [6]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "lowres, worst quality, bad anatomy, extra fingers, bad hands"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "CLIPTextEncode",
+      "pos": [-139.5721509090912, -43.169448181818126],
+      "size": [400, 200],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [7]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "1girl, soft lighting, anime style, bronde hair, blue eyes, long hair, huge breasts, shiny skin"
+      ]
+    }
+  ],
+  "links": [
+    [1, 9, 0, 6, 0, "MODEL"],
+    [2, 9, 1, 3, 0, "CLIP"],
+    [3, 9, 1, 4, 0, "CLIP"],
+    [4, 9, 2, 8, 1, "VAE"],
+    [5, 5, 0, 6, 3, "LATENT"],
+    [6, 4, 0, 6, 2, "CONDITIONING"],
+    [7, 3, 0, 6, 1, "CONDITIONING"],
+    [8, 6, 0, 8, 0, "LATENT"],
+    [9, 8, 0, 7, 0, "IMAGE"]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.131361917686889,
+      "offset": [673.4836133675267, 137.99906115588956]
+    },
+    "workflowRendererVersion": "LG",
+    "frontendVersion": "1.35.9"
+  },
+  "version": 0.4
+}
