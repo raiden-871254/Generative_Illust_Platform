@@ -224,11 +224,14 @@ def main() -> int:
     ap.add_argument("--run-id", default=_now_run_id())
     ap.add_argument("--weights", default="0.4,0.6,0.8", help="Comma-separated LoRA weights to sweep")
     ap.add_argument("--seeds", default="123456789", help="Comma-separated seeds for bench")
-    ap.add_argument("--bench-workflow", default=None, help="Path to bench workflow JSON")
+    ap.add_argument(
+        "--bench-workflow",
+        default="configs/gui/MeinaMix_v12_lora_bench.json",
+        help="Path to bench workflow JSON",
+    )
     ap.add_argument("--comfy-url", default="http://127.0.0.1:8188")
     ap.add_argument("--positive", default=None, help="Override positive prompt (optional)")
     ap.add_argument("--negative", default=None, help="Override negative prompt (optional)")
-    ap.add_argument("--fix-owner", action="store_true", help="Run scripts/fix_datasets_owner.bash before training")
     ap.add_argument("--resize", action="store_true", help="Run scripts/resize_dataset.py before training")
     ap.add_argument("--skip-resize", action="store_true", help="Skip resize step even if --resize is set")
     ap.add_argument("--yes", action="store_true", help="Pass -y to resize_dataset.py (overwrite outputs without prompt)")
@@ -239,24 +242,32 @@ def main() -> int:
     ap.add_argument("--batch-size", type=int, default=1, help="Bench batch size (recommended: 1)")
     ap.add_argument("--skip-train", action="store_true", help="Skip kohya training (for rerun of bench)")
     ap.add_argument("--skip-bench", action="store_true", help="Skip ComfyUI bench generation (only preprocess/train)")
+    ap.add_argument(
+        "--bench-only",
+        action="store_true",
+        help="Debug: skip training/resize and run bench only using an existing LoRA",
+    )
     args = ap.parse_args()
 
     if not args.skip_bench and not args.bench_workflow:
         raise SystemExit("--bench-workflow is required unless --skip-bench is set")
 
     run_id = args.run_id
-    run_dir = REPO_ROOT / "runs" / run_id
+    run_dir = REPO_ROOT / "output" / "logs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # 0) Optional ownership fix
-    if args.fix_owner:
-        fix_script = REPO_ROOT / args.fix_owner_bash
-        if fix_script.exists():
-            run_cmd(["bash", str(fix_script)], cwd=REPO_ROOT)
-        else:
-            print(f"[warn] fix-owner script not found: {fix_script}")
+    fix_script = REPO_ROOT / args.fix_owner_bash
+    if fix_script.exists():
+        run_cmd(["bash", str(fix_script)], cwd=REPO_ROOT)
+    else:
+        print(f"[warn] fix-owner script not found: {fix_script}")
 
     # 1) Optional resize / preprocess
+    if args.bench_only:
+        args.skip_train = True
+        args.skip_resize = True
+        args.resize = False
     if args.skip_resize:
         args.resize = False
     preprocess_log = REPO_ROOT / "datasets" / "normalized" / "preprocess_log.csv"
@@ -319,9 +330,9 @@ def main() -> int:
             print(f"[warn] trained LoRA not found at expected path: {trained_lora_host}")
             print("       Check output_dir in TOML (configs/lora/*.toml) and host volume mappings.")
         else:
-            # snapshot into run dir with run_id suffix (avoid later overwrite)
-            train_dir = run_dir / "train"
-            train_dir.mkdir(exist_ok=True)
+            # snapshot into output/kohya with run_id suffix (avoid later overwrite)
+            train_dir = REPO_ROOT / "output" / "kohya"
+            train_dir.mkdir(parents=True, exist_ok=True)
             archived = train_dir / f"{prefix}{base_name}__{run_id}.safetensors"
             shutil.copy2(trained_lora_host, archived)
 
@@ -363,10 +374,11 @@ def main() -> int:
     comfy = ComfyClient(base_url=args.comfy_url)
 
     produced_paths: List[Path] = []
+    bench_dir = REPO_ROOT / "output" / "bench" / run_id
     for w in weights:
         for s in seeds:
             # ComfyUI SaveImage writes under its output dir; subfolders are allowed in prefix.
-            prefix_path = f"runs/{run_id}/bench/w{w:.2f}/seed{s}"
+            prefix_path = f"bench/{run_id}/w{w:.2f}/seed{s}"
             wf2 = patch_workflow_for_bench(
                 workflow,
                 lora_filename=trained_lora_filename,
@@ -386,6 +398,12 @@ def main() -> int:
                 p = REPO_ROOT / "output" / sub / fn if sub else (REPO_ROOT / "output" / fn)
                 produced_paths.append(p)
 
+    fix_script = REPO_ROOT / args.fix_owner_bash
+    if fix_script.exists():
+        run_cmd(["bash", str(fix_script)], cwd=REPO_ROOT)
+    else:
+        print(f"[warn] fix-owner script not found: {fix_script}")
+
     # 5) Metrics + contact sheets
     img_metrics = []
     for p in produced_paths:
@@ -397,7 +415,7 @@ def main() -> int:
         else:
             print(f"[warn] output image not found (check Comfy output mapping): {p}")
 
-    metrics_csv = run_dir / "bench" / "metrics.csv"
+    metrics_csv = bench_dir / "metrics.csv"
     write_metrics_csv(img_metrics, metrics_csv)
 
     # Create per-seed contact sheets (weights side-by-side)
@@ -412,7 +430,7 @@ def main() -> int:
     for seed, items in by_seed.items():
         items.sort(key=lambda t: t[0])
         paths = [p for _w, p in items]
-        out = run_dir / "bench" / "grid" / f"seed{seed}_weights.png"
+        out = bench_dir / "grid" / f"seed{seed}_weights.png"
         try:
             make_contact_sheet(paths, out_path=out, cols=len(weights))
         except Exception as e:
@@ -420,6 +438,7 @@ def main() -> int:
 
     print(f"[done] Run complete: {run_id}")
     print(f" - Run dir: {run_dir}")
+    print(f" - Bench dir: {bench_dir}")
     print(f" - Metrics: {metrics_csv}")
     return 0
 
