@@ -13,7 +13,8 @@ python scripts/resize_dataset.py \
   --target-long 768 \
   --min-short 512 \
   --max-ar 2.2 \
-  --convert-rgb
+  --convert-rgb \
+  --jobs 24
 ```
 
 - `--input` を省略すると `datasets/raw` が使われます。
@@ -57,5 +58,6 @@ python scripts/resize_dataset.py \
 - `--min-short`: 最小辺の下限（デフォルト 512）
 - `--max-ar`: 許容アスペクト比の上限（デフォルト 2.2）
 - `--convert-rgb`: RGB/RGBAに変換して保存（モード問題の回避用）
+- `--jobs`: 並列プロセス数（デフォルト 24）
 - `-y`, `--yes`: 既存の出力ディレクトリを確認なしで上書き
 - `--rejected`: 除外画像のコピー先

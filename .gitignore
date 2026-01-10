@@ -208,15 +208,19 @@ __marimo__/
 
 # logs
 logs/
+runs/
 
 # models
-models/
+models/checkpoints/*
+models/loras/*
+models/vae/*
 
 # datasets
 datasets/raw/*
 datasets/normalized/*
 datasets/pickled/*
 datasets/staging/*
+datasets/raw_format/*
 
 # comfy ui custom guis
 configs/gui/*
