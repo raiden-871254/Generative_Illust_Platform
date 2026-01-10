@@ -25,14 +25,7 @@ uv add pillow
 
 ### Docker
 
-- ComfyUI は事前起動が必要
-- kohya は `scripts/run_lora.bash` が起動するため事前 `up` 不要
-
-ComfyUI 起動例:
-
-```
-docker compose -f comfy-docker/docker-compose.yml up -d
-```
+- Docker コンテナは `pipeline_run.py` 実行時に自動起動/停止される。
 
 ## ディレクトリ構造（入力・出力）
 
@@ -41,7 +34,7 @@ docker compose -f comfy-docker/docker-compose.yml up -d
 - 中間
   - `datasets/normalized/...`（リサイズ済み）
 - 学習済みLoRAの正本
-  - `output/kohya/<style|char>_<base>__<run_id>.safetensors`
+  - `output/kohya/<style|char>_<base>_bench_<run_id>.safetensors`
 - ログ・作業ファイル
   - `output/logs/<run_id>/...`（rejected / preprocess_log など）
 - ComfyUI 出力
@@ -78,6 +71,9 @@ uv run python scripts/pipeline_run.py \
 - `--seeds`（default: `123456789`）
 - `--bench-workflow`（default: `configs/gui/MeinaMix_v12_lora_bench.json`）
 - `--comfy-url`（default: `http://127.0.0.1:8188`）
+- `--comfy-compose-file`（default: `comfy-docker/docker-compose.yml`）
+- `--comfy-service`（default: `comfyui`）
+- `--comfy-wait-timeout`（default: `180`）
 - `--positive`（default: `None`）: 既存workflowの正/負プロンプトを上書き
 - `--negative`（default: `None`）
 - `--batch-size`（default: `1`）: ベンチ用のバッチサイズ
@@ -91,6 +87,10 @@ uv run python scripts/pipeline_run.py \
 - `--resize`: 事前リサイズを実行（デフォルトでも実行）
 - `--no-resize`: 事前リサイズをスキップ
 - `--yes`: リサイズの上書き確認をスキップ
+- `--comfy-start-after-train`: 学習後にComfyUIを自動起動（デフォルト有効）
+- `--no-comfy-start-after-train`: ComfyUI自動起動を無効化
+- `--comfy-stop-before-train`: 学習前にComfyUIを停止（デフォルト有効）
+- `--no-comfy-stop-before-train`: 学習前のComfyUI停止を無効化
 - `--skip-train`: kohya学習をスキップ（ベンチのみ再実行）
 - `--skip-bench`: ベンチ生成をスキップ（前処理/学習のみ）
 - `--skip-resize`: `datasets/normalized` を直接利用（raw→normalized推定を省略）
@@ -107,9 +107,9 @@ uv run python scripts/pipeline_run.py \
 3) `preprocess_log.csv` から正規化済みセット名を推定  
 4) `scripts/run_lora.bash` でkohya学習  
    - 学習結果は `output/kohya/<style|char>_<base>.safetensors`  
-   - 正本は `output/kohya/<style|char>_<base>__<run_id>.safetensors` に保存  
-   - ComfyUI用に `models/loras/` へコピー  
-5) ComfyUIでベンチ生成（weight/seedスイープ）  
+   - 正本は `output/kohya/<style|char>_<base>_bench_<run_id>.safetensors` に保存  
+   - `models/loras/<style|char>_<base>_bench.safetensors` を上書きコピー  
+5) ComfyUIを起動してベンチ生成（weight/seedスイープ）  
 6) `output/bench/<run_id>/metrics.csv` と `output/bench/<run_id>/grid/*.png` を出力
 
 ## 生成結果の見方
@@ -123,9 +123,10 @@ uv run python scripts/pipeline_run.py \
 
 - ComfyUIに繋がらない  
   - `--comfy-url` のURL/ポートを確認  
+  - `--no-comfy-start-after-train` を指定している場合は手動で起動  
   - `docker compose -f comfy-docker/docker-compose.yml up -d` で起動
 - LoRAが見つからない  
-  - `models/loras` にLoRAが配置されているか確認  
+  - `models/loras` に採用済みLoRAを配置しているか確認  
   - ComfyUIの探索パスが `models/loras` を含むか確認
 - outputに画像が無い  
   - ComfyUIの `output` マウントが `./output` に向いているか確認  
@@ -148,4 +149,5 @@ uv run python scripts/pipeline_run.py \
   - weight/seed/SaveImage prefixは実行時に自動パッチされます
 - 実行は `uv run python ...` 推奨
 - ComfyUIは事前起動が必要、kohyaは不要（`run_lora.bash` が起動）
+- ComfyUIの自動起動/停止は `--no-comfy-start-after-train` / `--no-comfy-stop-before-train` で無効化できる
 - 出力の正本は `output/kohya/`（上書き防止）

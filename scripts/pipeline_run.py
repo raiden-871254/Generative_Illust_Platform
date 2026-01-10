@@ -118,6 +118,10 @@ def base_name_from_set(set_name: str) -> str:
     return re.sub(r"^([0-9]+_+)", "", set_name) or set_name
 
 
+def strip_picked_suffix(name: str) -> str:
+    return name[: -len("_picked")] if name.endswith("_picked") else name
+
+
 def patch_workflow_for_bench(
     workflow: dict[str, Any],
     *,
@@ -444,13 +448,17 @@ def main() -> int:
             preprocess_log, args.raw_set, group=group
         )
     base_name = base_name_from_set(normalized_set)
+    display_base_name = strip_picked_suffix(base_name)
 
     # Expected output file name from container logic:
     #   style -> style_<base_name>
     #   char  -> char_<base_name>
     prefix = "style_" if args.profile == "style" else "char_"
     produced_name = f"{prefix}{base_name}.safetensors"
-    trained_lora_host = REPO_ROOT / "output" / "kohya" / produced_name
+    bench_name = f"{prefix}{display_base_name}_bench.safetensors"
+    bench_archive_name = f"{prefix}{display_base_name}_bench_{run_id}.safetensors"
+    trained_lora_host_raw = REPO_ROOT / "output" / "kohya" / produced_name
+    trained_lora_host = REPO_ROOT / "output" / "kohya" / bench_archive_name
 
     # (optional) stop comfyui to free VRAM during training
     if args.comfy_stop_before_train and not args.skip_train and not args.bench_only:
@@ -475,37 +483,38 @@ def main() -> int:
             cwd=REPO_ROOT,
         )
 
-        if not trained_lora_host.exists():
+        if not trained_lora_host_raw.exists():
             print(
-                f"[error] trained LoRA not found at expected path: {trained_lora_host}"
+                f"[error] trained LoRA not found at expected path: {trained_lora_host_raw}"
             )
             print(
                 "        Check output_dir in TOML (configs/lora/*.toml) and host volume mappings."
             )
             return 2
         else:
-            # snapshot into output/kohya with run_id suffix (avoid later overwrite)
-            train_dir = REPO_ROOT / "output" / "kohya"
-            train_dir.mkdir(parents=True, exist_ok=True)
-            archived = train_dir / f"{prefix}{base_name}__{run_id}.safetensors"
-            shutil.copy2(trained_lora_host, archived)
+            # rename raw output to bench archive name (timestamped)
+            if trained_lora_host.exists():
+                print(f"[warn] target exists, overwriting: {trained_lora_host}")
+                trained_lora_host.unlink()
+            trained_lora_host_raw.rename(trained_lora_host)
 
-            # install for ComfyUI using archived filename (so multiple versions can coexist)
+            # copy for bench (no timestamp, overwrite)
             install_dir = REPO_ROOT / args.lora_install_dir
             install_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(archived, install_dir / archived.name)
+            shutil.copy2(trained_lora_host, install_dir / bench_name)
 
-            # We'll use the archived filename for bench generation
-            trained_lora_filename = archived.name
+            # We'll use the bench filename for bench generation
+            trained_lora_filename = bench_name
     else:
         # If skipping train, assume latest exists and install dir already has it;
         # fall back to the non-archived name.
-        trained_lora_filename = trained_lora_host.name
-        if not trained_lora_host.exists():
+        trained_lora_filename = bench_name
+        install_dir = REPO_ROOT / args.lora_install_dir
+        if not (install_dir / trained_lora_filename).exists():
             print(
-                f"[error] trained LoRA not found at expected path: {trained_lora_host}"
+                f"[error] LoRA file not found in install dir: {install_dir / trained_lora_filename}\n"
+                "        Run training once or copy the selected LoRA into models/loras."
             )
-            print("        Run training once or provide an existing LoRA file.")
             return 2
 
     if args.skip_bench:
@@ -523,13 +532,11 @@ def main() -> int:
     # Ensure ComfyUI can load the file we reference
     install_dir = REPO_ROOT / args.lora_install_dir
     if not (install_dir / trained_lora_filename).exists():
-        if trained_lora_host.exists():
-            shutil.copy2(trained_lora_host, install_dir / trained_lora_filename)
-        else:
-            print(
-                f"[error] LoRA file missing both in install dir and output: {trained_lora_filename}"
-            )
-            return 2
+        print(
+            f"[error] LoRA file not found in install dir: {install_dir / trained_lora_filename}\n"
+            "        Run training once or copy the selected LoRA into models/loras."
+        )
+        return 2
 
     bench_workflow_path = (
         (REPO_ROOT / args.bench_workflow)
