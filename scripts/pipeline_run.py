@@ -25,6 +25,7 @@ Notes:
 - run_lora.bash inside the container derives output_name from the dataset set:
   style: style_<base_set_name_without_numeric_prefix>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -35,13 +36,14 @@ import os
 import re
 import shutil
 import subprocess
-import sys
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+from bench_utils import compute_metrics, make_contact_sheet, write_metrics_csv
 from comfy_client import ComfyClient
-from bench_utils import compute_metrics, write_metrics_csv, make_contact_sheet
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,12 +52,37 @@ def _now_run_id() -> str:
     return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def run_cmd(cmd: List[str], cwd: Optional[Path] = None, env: Optional[dict] = None) -> None:
+def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> None:
     print(f"[cmd] {' '.join(cmd)}")
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, env=env, check=True)
 
 
-def parse_normalized_set_name(preprocess_log: Path, raw_set: str, group: str = "style") -> str:
+def docker_compose(args: list[str], compose_file: Path, cwd: Path) -> None:
+    cmd = ["docker", "compose", "-f", str(compose_file)] + args
+    run_cmd(cmd, cwd=cwd)
+
+
+def wait_for_comfy(url: str, timeout_s: int = 180) -> None:
+    # ComfyUIが起動していれば /system_stats が200で返ることが多い
+    check_url = url.rstrip("/") + "/system_stats"
+    start = time.time()
+    last_err: str | None = None
+    while time.time() - start < timeout_s:
+        try:
+            with urllib.request.urlopen(check_url, timeout=3) as resp:
+                if 200 <= resp.status < 300:
+                    return
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(1)
+    raise TimeoutError(
+        f"ComfyUI did not become ready in {timeout_s}s. last_err={last_err}"
+    )
+
+
+def parse_normalized_set_name(
+    preprocess_log: Path, raw_set: str, group: str = "style"
+) -> str:
     """
     Determine normalized topdir name for a given raw set by reading preprocess_log.csv,
     finding first OK row under datasets/raw/{group}/{raw_set}/..., and extracting rel = "{group}/{normalized_topdir}/..."
@@ -80,7 +107,7 @@ def parse_normalized_set_name(preprocess_log: Path, raw_set: str, group: str = "
     )
 
 
-def list_dataset_sets(root: Path) -> List[str]:
+def list_dataset_sets(root: Path) -> list[str]:
     if not root.exists():
         return []
     return sorted([p.name for p in root.iterdir() if p.is_dir()])
@@ -92,16 +119,16 @@ def base_name_from_set(set_name: str) -> str:
 
 
 def patch_workflow_for_bench(
-    workflow: Dict[str, Any],
+    workflow: dict[str, Any],
     *,
     lora_filename: str,
     lora_weight: float,
     seed: int,
     filename_prefix: str,
-    positive: Optional[str] = None,
-    negative: Optional[str] = None,
+    positive: str | None = None,
+    negative: str | None = None,
     batch_size: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Patch specific nodes in the provided workflow:
       - LoraLoader (id=11 in your bench file): widgets_values = [filename, strength_model, strength_clip]
@@ -122,7 +149,7 @@ def patch_workflow_for_bench(
     if is_api_format:
         nodes = wf
 
-        def must_node(nid: int) -> Dict[str, Any]:
+        def must_node(nid: int) -> dict[str, Any]:
             key = str(nid)
             if key not in nodes:
                 raise KeyError(f"Node id {nid} not found in workflow")
@@ -162,7 +189,7 @@ def patch_workflow_for_bench(
     else:
         nodes = {n["id"]: n for n in wf.get("nodes", [])}
 
-        def must_node(nid: int) -> Dict[str, Any]:
+        def must_node(nid: int) -> dict[str, Any]:
             if nid not in nodes:
                 raise KeyError(f"Node id {nid} not found in workflow")
             return nodes[nid]
@@ -220,18 +247,67 @@ def patch_workflow_for_bench(
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile", choices=["style", "char"], default="style")
-    ap.add_argument("--raw-set", required=True, help="Folder name under datasets/raw/{style|characters}/")
+    ap.add_argument(
+        "--raw-set",
+        required=True,
+        help="Folder name under datasets/raw/{style|characters}/",
+    )
     ap.add_argument("--run-id", default=_now_run_id())
-    ap.add_argument("--weights", default="0.4,0.6,0.8", help="Comma-separated LoRA weights to sweep")
-    ap.add_argument("--seeds", default="123456789", help="Comma-separated seeds for bench")
+    ap.add_argument(
+        "--weights", default="0.4,0.6,0.8", help="Comma-separated LoRA weights to sweep"
+    )
+    ap.add_argument(
+        "--seeds", default="123456789", help="Comma-separated seeds for bench"
+    )
     ap.add_argument(
         "--bench-workflow",
         default="configs/gui/MeinaMix_v12_lora_bench.json",
         help="Path to bench workflow JSON",
     )
     ap.add_argument("--comfy-url", default="http://127.0.0.1:8188")
-    ap.add_argument("--positive", default=None, help="Override positive prompt (optional)")
-    ap.add_argument("--negative", default=None, help="Override negative prompt (optional)")
+    ap.add_argument(
+        "--comfy-compose-file",
+        default="comfy-docker/docker-compose.yml",
+        help="docker compose file for comfyui (default: comfy-docker/docker-compose.yml)",
+    )
+    ap.add_argument(
+        "--comfy-service", default="comfyui", help="service name for comfyui in compose"
+    )
+    ap.add_argument(
+        "--comfy-start-after-train",
+        action="store_true",
+        default=True,
+        help="Start comfyui after training before bench (default: on)",
+    )
+    ap.add_argument(
+        "--no-comfy-start-after-train",
+        action="store_true",
+        help="Do not start comfyui automatically",
+    )
+    ap.add_argument(
+        "--comfy-stop-before-train",
+        action="store_true",
+        default=True,
+        help="Stop comfyui before training to free VRAM (default: on)",
+    )
+    ap.add_argument(
+        "--no-comfy-stop-before-train",
+        action="store_true",
+        help="Do not stop comfyui before training",
+    )
+    ap.add_argument(
+        "--comfy-wait-timeout",
+        type=int,
+        default=180,
+        help="Seconds to wait for comfyui to become ready",
+    )
+
+    ap.add_argument(
+        "--positive", default=None, help="Override positive prompt (optional)"
+    )
+    ap.add_argument(
+        "--negative", default=None, help="Override negative prompt (optional)"
+    )
     ap.add_argument(
         "--resize",
         action="store_true",
@@ -242,21 +318,53 @@ def main() -> int:
         action="store_true",
         help="Skip scripts/resize_dataset.py (override default)",
     )
-    ap.add_argument("--skip-resize", action="store_true", help="Use datasets/normalized directly")
-    ap.add_argument("--yes", action="store_true", help="Pass -y to resize_dataset.py (overwrite outputs without prompt)")
-    ap.add_argument("--lora-install-dir", default="models/loras", help="Where to copy trained LoRA so ComfyUI can load it")
+    ap.add_argument(
+        "--skip-resize", action="store_true", help="Use datasets/normalized directly"
+    )
+    ap.add_argument(
+        "--yes",
+        action="store_true",
+        help="Pass -y to resize_dataset.py (overwrite outputs without prompt)",
+    )
+    ap.add_argument(
+        "--lora-install-dir",
+        default="models/loras",
+        help="Where to copy trained LoRA so ComfyUI can load it",
+    )
     ap.add_argument("--run-lora-bash", default="scripts/run_lora.bash")
     ap.add_argument("--resize-script", default="scripts/resize_dataset.py")
     ap.add_argument("--fix-owner-bash", default="scripts/fix_datasets_owner.bash")
-    ap.add_argument("--batch-size", type=int, default=1, help="Bench batch size (recommended: 1)")
-    ap.add_argument("--skip-train", action="store_true", help="Skip kohya training (for rerun of bench)")
-    ap.add_argument("--skip-bench", action="store_true", help="Skip ComfyUI bench generation (only preprocess/train)")
+    ap.add_argument(
+        "--batch-size", type=int, default=1, help="Bench batch size (recommended: 1)"
+    )
+    ap.add_argument(
+        "--skip-train",
+        action="store_true",
+        help="Skip kohya training (for rerun of bench)",
+    )
+    ap.add_argument(
+        "--skip-bench",
+        action="store_true",
+        help="Skip ComfyUI bench generation (only preprocess/train)",
+    )
     ap.add_argument(
         "--bench-only",
         action="store_true",
         help="Debug: skip training/resize and run bench only using an existing LoRA",
     )
     args = ap.parse_args()
+    if args.no_comfy_start_after_train:
+        args.comfy_start_after_train = False
+    if args.no_comfy_stop_before_train:
+        args.comfy_stop_before_train = False
+
+    compose_file = (
+        (REPO_ROOT / args.comfy_compose_file)
+        if not Path(args.comfy_compose_file).is_absolute()
+        else Path(args.comfy_compose_file)
+    )
+    compose_file = compose_file.resolve()
+    comfy_cwd = compose_file.parent
 
     if not args.skip_bench and not args.bench_workflow:
         raise SystemExit("--bench-workflow is required unless --skip-bench is set")
@@ -290,7 +398,12 @@ def main() -> int:
         if args.yes:
             cmd.append("-y")
         # Important: run on datasets/raw so top-level remapping works (style/<set> -> style/<n_set>)
-        cmd += ["--input", str(REPO_ROOT / "datasets" / "raw"), "--output", str(REPO_ROOT / "datasets" / "normalized")]
+        cmd += [
+            "--input",
+            str(REPO_ROOT / "datasets" / "raw"),
+            "--output",
+            str(REPO_ROOT / "datasets" / "normalized"),
+        ]
         # Save rejected to run folder for inspection
         rej_dir = run_dir / "rejected"
         cmd += ["--rejected", str(rej_dir)]
@@ -327,7 +440,9 @@ def main() -> int:
                 f"preprocess_log.csv not found: {preprocess_log}\n"
                 "Run with --resize once or use --skip-resize with a normalized set name."
             )
-        normalized_set = parse_normalized_set_name(preprocess_log, args.raw_set, group=group)
+        normalized_set = parse_normalized_set_name(
+            preprocess_log, args.raw_set, group=group
+        )
     base_name = base_name_from_set(normalized_set)
 
     # Expected output file name from container logic:
@@ -337,13 +452,36 @@ def main() -> int:
     produced_name = f"{prefix}{base_name}.safetensors"
     trained_lora_host = REPO_ROOT / "output" / "kohya" / produced_name
 
+    # (optional) stop comfyui to free VRAM during training
+    if args.comfy_stop_before_train and not args.skip_train and not args.bench_only:
+        try:
+            docker_compose(
+                ["stop", args.comfy_service], compose_file=compose_file, cwd=comfy_cwd
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"[warn] failed to stop comfyui (ignored): {e}")
+
     if not args.skip_train:
         run_lora = REPO_ROOT / args.run_lora_bash
-        run_cmd(["bash", str(run_lora), "--profile", args.profile, "--input", normalized_set], cwd=REPO_ROOT)
+        run_cmd(
+            [
+                "bash",
+                str(run_lora),
+                "--profile",
+                args.profile,
+                "--input",
+                normalized_set,
+            ],
+            cwd=REPO_ROOT,
+        )
 
         if not trained_lora_host.exists():
-            print(f"[error] trained LoRA not found at expected path: {trained_lora_host}")
-            print("        Check output_dir in TOML (configs/lora/*.toml) and host volume mappings.")
+            print(
+                f"[error] trained LoRA not found at expected path: {trained_lora_host}"
+            )
+            print(
+                "        Check output_dir in TOML (configs/lora/*.toml) and host volume mappings."
+            )
             return 2
         else:
             # snapshot into output/kohya with run_id suffix (avoid later overwrite)
@@ -364,13 +502,22 @@ def main() -> int:
         # fall back to the non-archived name.
         trained_lora_filename = trained_lora_host.name
         if not trained_lora_host.exists():
-            print(f"[error] trained LoRA not found at expected path: {trained_lora_host}")
+            print(
+                f"[error] trained LoRA not found at expected path: {trained_lora_host}"
+            )
             print("        Run training once or provide an existing LoRA file.")
             return 2
 
     if args.skip_bench:
         print("[done] preprocess/train completed (bench skipped)")
         return 0
+
+    # start comfyui only when we are going to run bench
+    if not args.skip_bench and args.comfy_start_after_train:
+        docker_compose(
+            ["up", "-d", args.comfy_service], compose_file=compose_file, cwd=comfy_cwd
+        )
+        wait_for_comfy(args.comfy_url, timeout_s=args.comfy_wait_timeout)
 
     # 3-5) Bench generation: weight sweep + metrics + contact sheets
     # Ensure ComfyUI can load the file we reference
@@ -379,7 +526,9 @@ def main() -> int:
         if trained_lora_host.exists():
             shutil.copy2(trained_lora_host, install_dir / trained_lora_filename)
         else:
-            print(f"[error] LoRA file missing both in install dir and output: {trained_lora_filename}")
+            print(
+                f"[error] LoRA file missing both in install dir and output: {trained_lora_filename}"
+            )
             return 2
 
     bench_workflow_path = (
@@ -393,8 +542,11 @@ def main() -> int:
     seeds = [int(x.strip()) for x in args.seeds.split(",") if x.strip()]
     comfy = ComfyClient(base_url=args.comfy_url)
 
-    produced_paths: List[Path] = []
+    produced_paths: list[Path] = []
     bench_dir = REPO_ROOT / "output" / "bench" / run_id
+    bench_dir.mkdir(parents=True, exist_ok=True)
+    (bench_dir / "grid").mkdir(parents=True, exist_ok=True)
+
     for w in weights:
         for s in seeds:
             # ComfyUI SaveImage writes under its output dir; subfolders are allowed in prefix.
@@ -415,7 +567,11 @@ def main() -> int:
             for img in res.output_images:
                 sub = img.get("subfolder", "")
                 fn = img.get("filename", "")
-                p = REPO_ROOT / "output" / sub / fn if sub else (REPO_ROOT / "output" / fn)
+                p = (
+                    REPO_ROOT / "output" / sub / fn
+                    if sub
+                    else (REPO_ROOT / "output" / fn)
+                )
                 produced_paths.append(p)
 
     fix_script = REPO_ROOT / args.fix_owner_bash
@@ -439,7 +595,7 @@ def main() -> int:
     write_metrics_csv(img_metrics, metrics_csv)
 
     # Create per-seed contact sheets (weights side-by-side)
-    by_seed: dict[int, List[tuple[float, Path]]] = {}
+    by_seed: dict[int, list[tuple[float, Path]]] = {}
     for m in img_metrics:
         ms = re.search(r"/w(\d+\.\d+)/seed(\d+)", str(m.path).replace("\\\\", "/"))
         if not ms:
@@ -455,6 +611,16 @@ def main() -> int:
             make_contact_sheet(paths, out_path=out, cols=len(weights))
         except Exception as e:
             print(f"[warn] contact sheet failed for seed={seed}: {e}")
+
+    # (optional) stop comfyui after bench to free VRAM
+    try:
+        docker_compose(
+            ["stop", args.comfy_service],
+            compose_file=compose_file,
+            cwd=comfy_cwd,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"[warn] failed to stop comfyui after bench (ignored): {e}")
 
     print(f"[done] Run complete: {run_id}")
     print(f" - Run dir: {run_dir}")
