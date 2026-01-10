@@ -80,6 +80,12 @@ def parse_normalized_set_name(preprocess_log: Path, raw_set: str, group: str = "
     )
 
 
+def list_dataset_sets(root: Path) -> List[str]:
+    if not root.exists():
+        return []
+    return sorted([p.name for p in root.iterdir() if p.is_dir()])
+
+
 def base_name_from_set(set_name: str) -> str:
     # strip leading digits/underscores: "20_cyrene" -> "cyrene"
     return re.sub(r"^([0-9]+_+)", "", set_name) or set_name
@@ -105,59 +111,108 @@ def patch_workflow_for_bench(
       - CLIPTextEncode positive/negative (ids=3 and 4): widgets_values[0]=text
     """
     wf = json.loads(json.dumps(workflow))  # deep copy
-    nodes = {n["id"]: n for n in wf.get("nodes", [])}
 
-    def must_node(nid: int) -> Dict[str, Any]:
-        if nid not in nodes:
-            raise KeyError(f"Node id {nid} not found in workflow")
-        return nodes[nid]
+    # ComfyUI JSON has two formats:
+    # - UI export: {"nodes":[{"id":...,"widgets_values":[...]}]}
+    # - API export: {"3": {"class_type": "...", "inputs": {...}}, ...}
+    is_api_format = "nodes" not in wf and all(
+        isinstance(v, dict) and "class_type" in v for v in wf.values()
+    )
 
-    # LoraLoader
-    lora = must_node(11)
-    wv = lora.get("widgets_values", [])
-    if len(wv) < 3:
-        raise RuntimeError(f"Unexpected LoraLoader widgets_values: {wv}")
-    wv[0] = lora_filename
-    wv[1] = float(lora_weight)
-    wv[2] = float(lora_weight)
-    lora["widgets_values"] = wv
+    if is_api_format:
+        nodes = wf
 
-    # KSampler seed + fixed
-    ks = must_node(6)
-    ksw = ks.get("widgets_values", [])
-    if len(ksw) < 2:
-        raise RuntimeError(f"Unexpected KSampler widgets_values: {ksw}")
-    ksw[0] = int(seed)
-    ksw[1] = "fixed"
-    ks["widgets_values"] = ksw
+        def must_node(nid: int) -> Dict[str, Any]:
+            key = str(nid)
+            if key not in nodes:
+                raise KeyError(f"Node id {nid} not found in workflow")
+            return nodes[key]
 
-    # EmptyLatentImage batch size
-    el = must_node(5)
-    elw = el.get("widgets_values", [])
-    if len(elw) >= 3:
-        elw[2] = int(batch_size)
-        el["widgets_values"] = elw
+        # LoraLoader
+        lora = must_node(11)
+        inputs = lora.setdefault("inputs", {})
+        inputs["lora_name"] = lora_filename
+        inputs["strength_model"] = float(lora_weight)
+        inputs["strength_clip"] = float(lora_weight)
 
-    # SaveImage prefix (supports subfolders)
-    si = must_node(7)
-    siw = si.get("widgets_values", [])
-    if not siw:
-        siw = [filename_prefix]
+        # KSampler seed
+        ks = must_node(6)
+        ks_inputs = ks.setdefault("inputs", {})
+        ks_inputs["seed"] = int(seed)
+
+        # EmptyLatentImage batch size
+        el = must_node(5)
+        el_inputs = el.setdefault("inputs", {})
+        el_inputs["batch_size"] = int(batch_size)
+
+        # SaveImage prefix (supports subfolders)
+        si = must_node(7)
+        si_inputs = si.setdefault("inputs", {})
+        si_inputs["filename_prefix"] = filename_prefix
+
+        # Prompts
+        if positive is not None:
+            pos = must_node(3)
+            pos_inputs = pos.setdefault("inputs", {})
+            pos_inputs["text"] = positive.strip()
+        if negative is not None:
+            neg = must_node(4)
+            neg_inputs = neg.setdefault("inputs", {})
+            neg_inputs["text"] = negative.strip()
     else:
-        siw[0] = filename_prefix
-    si["widgets_values"] = siw
+        nodes = {n["id"]: n for n in wf.get("nodes", [])}
 
-    # Prompts
-    if positive is not None:
-        pos = must_node(3)
-        pv = pos.get("widgets_values", [""])
-        pv[0] = positive.strip()
-        pos["widgets_values"] = pv
-    if negative is not None:
-        neg = must_node(4)
-        nv = neg.get("widgets_values", [""])
-        nv[0] = negative.strip()
-        neg["widgets_values"] = nv
+        def must_node(nid: int) -> Dict[str, Any]:
+            if nid not in nodes:
+                raise KeyError(f"Node id {nid} not found in workflow")
+            return nodes[nid]
+
+        # LoraLoader
+        lora = must_node(11)
+        wv = lora.get("widgets_values", [])
+        if len(wv) < 3:
+            raise RuntimeError(f"Unexpected LoraLoader widgets_values: {wv}")
+        wv[0] = lora_filename
+        wv[1] = float(lora_weight)
+        wv[2] = float(lora_weight)
+        lora["widgets_values"] = wv
+
+        # KSampler seed + fixed
+        ks = must_node(6)
+        ksw = ks.get("widgets_values", [])
+        if len(ksw) < 2:
+            raise RuntimeError(f"Unexpected KSampler widgets_values: {ksw}")
+        ksw[0] = int(seed)
+        ksw[1] = "fixed"
+        ks["widgets_values"] = ksw
+
+        # EmptyLatentImage batch size
+        el = must_node(5)
+        elw = el.get("widgets_values", [])
+        if len(elw) >= 3:
+            elw[2] = int(batch_size)
+            el["widgets_values"] = elw
+
+        # SaveImage prefix (supports subfolders)
+        si = must_node(7)
+        siw = si.get("widgets_values", [])
+        if not siw:
+            siw = [filename_prefix]
+        else:
+            siw[0] = filename_prefix
+        si["widgets_values"] = siw
+
+        # Prompts
+        if positive is not None:
+            pos = must_node(3)
+            pv = pos.get("widgets_values", [""])
+            pv[0] = positive.strip()
+            pos["widgets_values"] = pv
+        if negative is not None:
+            neg = must_node(4)
+            nv = neg.get("widgets_values", [""])
+            nv[0] = negative.strip()
+            neg["widgets_values"] = nv
 
     return wf
 
@@ -169,12 +224,13 @@ def main() -> int:
     ap.add_argument("--run-id", default=_now_run_id())
     ap.add_argument("--weights", default="0.4,0.6,0.8", help="Comma-separated LoRA weights to sweep")
     ap.add_argument("--seeds", default="123456789", help="Comma-separated seeds for bench")
-    ap.add_argument("--bench-workflow", required=True, help="Path to bench workflow JSON")
+    ap.add_argument("--bench-workflow", default=None, help="Path to bench workflow JSON")
     ap.add_argument("--comfy-url", default="http://127.0.0.1:8188")
     ap.add_argument("--positive", default=None, help="Override positive prompt (optional)")
     ap.add_argument("--negative", default=None, help="Override negative prompt (optional)")
     ap.add_argument("--fix-owner", action="store_true", help="Run scripts/fix_datasets_owner.bash before training")
     ap.add_argument("--resize", action="store_true", help="Run scripts/resize_dataset.py before training")
+    ap.add_argument("--skip-resize", action="store_true", help="Skip resize step even if --resize is set")
     ap.add_argument("--yes", action="store_true", help="Pass -y to resize_dataset.py (overwrite outputs without prompt)")
     ap.add_argument("--lora-install-dir", default="models/loras", help="Where to copy trained LoRA so ComfyUI can load it")
     ap.add_argument("--run-lora-bash", default="scripts/run_lora.bash")
@@ -184,6 +240,9 @@ def main() -> int:
     ap.add_argument("--skip-train", action="store_true", help="Skip kohya training (for rerun of bench)")
     ap.add_argument("--skip-bench", action="store_true", help="Skip ComfyUI bench generation (only preprocess/train)")
     args = ap.parse_args()
+
+    if not args.skip_bench and not args.bench_workflow:
+        raise SystemExit("--bench-workflow is required unless --skip-bench is set")
 
     run_id = args.run_id
     run_dir = REPO_ROOT / "runs" / run_id
@@ -198,6 +257,8 @@ def main() -> int:
             print(f"[warn] fix-owner script not found: {fix_script}")
 
     # 1) Optional resize / preprocess
+    if args.skip_resize:
+        args.resize = False
     preprocess_log = REPO_ROOT / "datasets" / "normalized" / "preprocess_log.csv"
     if args.resize:
         resize_script = REPO_ROOT / args.resize_script
@@ -217,7 +278,30 @@ def main() -> int:
 
     # 2) Resolve normalized set name and train
     group = "style" if args.profile == "style" else "characters"
-    normalized_set = parse_normalized_set_name(preprocess_log, args.raw_set, group=group)
+    raw_root = REPO_ROOT / "datasets" / "raw" / group
+    normalized_root = REPO_ROOT / "datasets" / "normalized" / group
+
+    if args.skip_resize:
+        normalized_set_dir = normalized_root / args.raw_set
+        if not normalized_set_dir.exists():
+            raise RuntimeError(
+                f"Normalized set not found: {normalized_set_dir}\n"
+                f"Expected datasets/normalized/{group}/{args.raw_set}/"
+            )
+        normalized_set = args.raw_set
+    else:
+        raw_set_dir = raw_root / args.raw_set
+        if not raw_set_dir.exists():
+            raise RuntimeError(
+                f"Raw set not found: {raw_set_dir}\n"
+                f"Expected datasets/raw/{group}/{args.raw_set}/"
+            )
+        if not preprocess_log.exists():
+            raise RuntimeError(
+                f"preprocess_log.csv not found: {preprocess_log}\n"
+                "Run with --resize once or use --skip-resize with a normalized set name."
+            )
+        normalized_set = parse_normalized_set_name(preprocess_log, args.raw_set, group=group)
     base_name = base_name_from_set(normalized_set)
 
     # Expected output file name from container logic:
@@ -267,7 +351,11 @@ def main() -> int:
             print(f"[error] LoRA file missing both in install dir and output: {trained_lora_filename}")
             return 2
 
-    bench_workflow_path = (REPO_ROOT / args.bench_workflow) if not Path(args.bench_workflow).is_absolute() else Path(args.bench_workflow)
+    bench_workflow_path = (
+        (REPO_ROOT / args.bench_workflow)
+        if not Path(args.bench_workflow).is_absolute()
+        else Path(args.bench_workflow)
+    )
     workflow = json.loads(bench_workflow_path.read_text(encoding="utf-8"))
 
     weights = [float(x.strip()) for x in args.weights.split(",") if x.strip()]
