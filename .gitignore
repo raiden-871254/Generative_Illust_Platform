@@ -210,7 +210,9 @@ __marimo__/
 logs/
 
 # models
-models/
+models/checkpoints/*
+models/loras/*
+models/vae/*
 
 # datasets
 datasets/raw/*
