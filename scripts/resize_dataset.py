@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -138,6 +140,24 @@ def process_one(
 
     except Exception as e:
         return False, f"error({type(e).__name__}): {e}"
+
+
+def process_one_task(
+    args: tuple[str, str, str, int, int, int, float, bool],
+) -> tuple[str, str, bool, str]:
+    src_str, dst_str, rel2_str, target_long, multiple, min_short, max_ar, convert_rgb = (
+        args
+    )
+    ok, reason = process_one(
+        src=Path(src_str),
+        dst=Path(dst_str),
+        target_long=target_long,
+        multiple=multiple,
+        min_short=min_short,
+        max_ar=max_ar,
+        convert_rgb=convert_rgb,
+    )
+    return src_str, rel2_str, ok, reason
 
 
 def iter_images(input_dir: Path) -> Iterable[Path]:
@@ -417,6 +437,12 @@ def main() -> int:
         help="Convert images to RGB/RGBA friendly formats (recommended).",
     )
     ap.add_argument(
+        "--jobs",
+        type=int,
+        default=24,
+        help="Number of worker processes (default: 24).",
+    )
+    ap.add_argument(
         "--rejected",
         type=Path,
         default=None,
@@ -456,40 +482,57 @@ def main() -> int:
         print(f"No images found in: {input_dir}")
         return 0
 
-    for src in tqdm(src_list, desc="processing", unit="img"):
+    if args.jobs < 1:
+        raise SystemExit("--jobs must be >= 1")
+
+    tasks: list[tuple[str, str, str, int, int, int, float, bool]] = []
+    for src in src_list:
         rel = src.relative_to(input_dir)
-
-        # NEW: remap output path for top-level dirs
         rel2 = remap_rel_path(rel, mapping)
-
         dst = output_dir / rel2  # extension may be changed later
-
-        ok, reason = process_one(
-            src=src,
-            dst=dst,
-            target_long=args.target_long,
-            multiple=args.multiple,
-            min_short=args.min_short,
-            max_ar=args.max_ar,
-            convert_rgb=args.convert_rgb,
+        tasks.append(
+            (
+                str(src),
+                str(dst),
+                str(rel2),
+                args.target_long,
+                args.multiple,
+                args.min_short,
+                args.max_ar,
+                args.convert_rgb,
+            )
         )
 
-        rows.append(
-            {
-                "src": str(src),
-                "rel": str(rel2),
-                "ok": "1" if ok else "0",
-                "reason": reason,
-            }
-        )
+    if args.jobs == 1:
+        it = (process_one_task(t) for t in tasks)
+    else:
+        max_workers = min(args.jobs, os.cpu_count() or args.jobs)
+        ex = ProcessPoolExecutor(max_workers=max_workers)
+        it = ex.map(process_one_task, tasks)
 
-        if (not ok) and rejected_dir is not None:
-            rej_path = rejected_dir / rel2
-            ensure_parent_dir(rej_path)
-            try:
-                rej_path.write_bytes(src.read_bytes())
-            except Exception:
-                pass
+    try:
+        for src_str, rel2_str, ok, reason in tqdm(
+            it, total=len(tasks), desc="processing", unit="img"
+        ):
+            rows.append(
+                {
+                    "src": src_str,
+                    "rel": rel2_str,
+                    "ok": "1" if ok else "0",
+                    "reason": reason,
+                }
+            )
+
+            if (not ok) and rejected_dir is not None:
+                rej_path = rejected_dir / rel2_str
+                ensure_parent_dir(rej_path)
+                try:
+                    rej_path.write_bytes(Path(src_str).read_bytes())
+                except Exception:
+                    pass
+    finally:
+        if args.jobs > 1:
+            ex.shutdown()
 
     with log_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["src", "rel", "ok", "reason"])
