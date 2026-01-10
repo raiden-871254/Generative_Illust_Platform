@@ -12,9 +12,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from bench_utils import compute_metrics, make_contact_sheet, write_metrics_csv
-from comfy_client import ComfyClient
-from comfy_docker import ComfyLogsTail, docker_compose, wait_for_comfy
+from modules.bench_utils import (
+    compute_metrics,
+    make_contact_sheet,
+    write_metrics_csv,
+)
+from modules.comfy_client import ComfyClient
+from modules.comfy_docker import ComfyLogsTail, docker_compose, wait_for_comfy
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
