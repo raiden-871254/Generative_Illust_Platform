@@ -1,6 +1,6 @@
 # ディレクトリ構成
 
-以下はリポジトリ直下の構成です（`.git` `.venv` `.mypy_cache` は省略）。
+以下はリポジトリ直下の構成です（`.git` `.venv` `.mypy_cache` は省略、生成物は一部のみ記載）。
 
 ```text
 .
@@ -18,6 +18,10 @@
 │       └── extensions.txt
 ├── .cache
 │   └── huggingface
+│       ├── .locks
+│       ├── hub
+│       ├── models--openai--clip-vit-large-patch14
+│       └── version.txt
 ├── .gitignore
 ├── .python-version
 ├── README.md
@@ -28,15 +32,25 @@
 │   └── docker-compose.yml
 ├── configs
 │   ├── gui
-│   │   └── MeinaMix_v12_sample.json
+│   │   ├── MeinaMix_v12_lora_0_4_bench.json
+│   │   ├── MeinaMix_v12_lora_0_8_bench.json
+│   │   ├── MeinaMix_v12_lora_bench.json
+│   │   ├── MeinaMix_v12_lora_sample.json
+│   │   ├── MeinaMix_v12_sample.json
 │   └── lora
 │       ├── char_lora.toml
 │       └── style_lora.toml
 ├── datasets
 │   ├── normalized
+│   │   ├── characters
+│   │   ├── style
+│   │   └── preprocess_log.csv
 │   ├── pickied
 │   ├── raw
+│   │   ├── characters
+│   │   └── style
 │   └── staging
+│       └── _STAGING_INFO.json
 ├── docs
 │   ├── architecture
 │   │   └── dir_trees.md
@@ -52,15 +66,22 @@
 │   ├── Dockerfile
 │   └── docker-compose.yml
 ├── logs
+│   └── kohya-docker.log
+├── lora
+│   ├── releases
+│   └── working
 ├── main.py
 ├── models
 │   ├── checkpoints
 │   │   └── meinamix_v12Final.safetensors
-│   ├── lora
+│   ├── loras
 │   └── vae
 ├── output
+│   ├── bench
 │   ├── kohya
+│   │   └── char_cyrene.safetensors
 │   └── logs
+│       └── ...
 ├── pyproject.toml
 ├── scripts
 │   ├── fix_datasets_owner.bash
