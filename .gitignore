@@ -219,6 +219,7 @@ datasets/raw/*
 datasets/normalized/*
 datasets/pickled/*
 datasets/staging/*
+datasets/raw_format/*
 
 # comfy ui custom guis
 configs/gui/*
