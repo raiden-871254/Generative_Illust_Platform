@@ -44,6 +44,7 @@ from typing import Any
 
 from bench_utils import compute_metrics, make_contact_sheet, write_metrics_csv
 from comfy_client import ComfyClient
+from comfy_docker import ComfyLogsTail, docker_compose, wait_for_comfy
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -523,9 +524,14 @@ def main() -> int:
 
     # start comfyui only when we are going to run bench
     if not args.skip_bench and args.comfy_start_after_train:
+        tail = ComfyLogsTail(
+            compose_file=compose_file, cwd=comfy_cwd, service=args.comfy_service
+        )
+
         docker_compose(
             ["up", "-d", args.comfy_service], compose_file=compose_file, cwd=comfy_cwd
         )
+        tail.start()
         wait_for_comfy(args.comfy_url, timeout_s=args.comfy_wait_timeout)
 
     # 3-5) Bench generation: weight sweep + metrics + contact sheets
@@ -621,6 +627,7 @@ def main() -> int:
 
     # (optional) stop comfyui after bench to free VRAM
     try:
+        tail.stop()
         docker_compose(
             ["stop", args.comfy_service],
             compose_file=compose_file,
