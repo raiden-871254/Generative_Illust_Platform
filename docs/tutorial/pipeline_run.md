@@ -56,7 +56,7 @@ docker compose -f comfy-docker/docker-compose.yml up -d
 uv run python scripts/pipeline_run.py \
   --profile style \
   --raw-set ponnyu_v1 \
-  --resize --yes \
+  --yes \
   --bench-workflow configs/gui/MeinaMix_v12_lora_bench.json \
   --weights 0.4,0.6,0.8 \
   --seeds 123456789,987654321 \
@@ -88,7 +88,8 @@ uv run python scripts/pipeline_run.py \
 
 フラグ:
 
-- `--resize`: 事前リサイズを実行
+- `--resize`: 事前リサイズを実行（デフォルトでも実行）
+- `--no-resize`: 事前リサイズをスキップ
 - `--yes`: リサイズの上書き確認をスキップ
 - `--skip-train`: kohya学習をスキップ（ベンチのみ再実行）
 - `--skip-bench`: ベンチ生成をスキップ（前処理/学習のみ）
@@ -98,7 +99,7 @@ uv run python scripts/pipeline_run.py \
 ## 実行フロー
 
 1) `scripts/fix_datasets_owner.bash` を実行  
-2) `--resize` 指定時に `scripts/resize_dataset.py` を実行  
+2) `scripts/resize_dataset.py` を実行（`--no-resize` でスキップ可能）  
    - `--convert-rgb` を付与  
    - `datasets/raw` → `datasets/normalized`  
    - 除外画像は `output/logs/<run_id>/rejected/` に保存  

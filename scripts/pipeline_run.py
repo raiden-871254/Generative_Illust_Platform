@@ -232,8 +232,17 @@ def main() -> int:
     ap.add_argument("--comfy-url", default="http://127.0.0.1:8188")
     ap.add_argument("--positive", default=None, help="Override positive prompt (optional)")
     ap.add_argument("--negative", default=None, help="Override negative prompt (optional)")
-    ap.add_argument("--resize", action="store_true", help="Run scripts/resize_dataset.py before training")
-    ap.add_argument("--skip-resize", action="store_true", help="Skip resize step even if --resize is set")
+    ap.add_argument(
+        "--resize",
+        action="store_true",
+        help="Force scripts/resize_dataset.py before training (default: run)",
+    )
+    ap.add_argument(
+        "--no-resize",
+        action="store_true",
+        help="Skip scripts/resize_dataset.py (override default)",
+    )
+    ap.add_argument("--skip-resize", action="store_true", help="Use datasets/normalized directly")
     ap.add_argument("--yes", action="store_true", help="Pass -y to resize_dataset.py (overwrite outputs without prompt)")
     ap.add_argument("--lora-install-dir", default="models/loras", help="Where to copy trained LoRA so ComfyUI can load it")
     ap.add_argument("--run-lora-bash", default="scripts/run_lora.bash")
@@ -264,12 +273,16 @@ def main() -> int:
         print(f"[warn] fix-owner script not found: {fix_script}")
 
     # 1) Optional resize / preprocess
+    if args.no_resize and args.resize:
+        raise SystemExit("Use either --resize or --no-resize, not both")
     if args.bench_only:
         args.skip_train = True
         args.skip_resize = True
         args.resize = False
-    if args.skip_resize:
-        args.resize = False
+    else:
+        args.resize = not args.no_resize
+        if args.skip_resize:
+            args.resize = False
     preprocess_log = REPO_ROOT / "datasets" / "normalized" / "preprocess_log.csv"
     if args.resize:
         resize_script = REPO_ROOT / args.resize_script
@@ -286,6 +299,8 @@ def main() -> int:
         # snapshot preprocess log to run dir
         if preprocess_log.exists():
             shutil.copy2(preprocess_log, run_dir / "preprocess_log.csv")
+    else:
+        print("[info] resize disabled; skipping resize_dataset.py")
 
     # 2) Resolve normalized set name and train
     group = "style" if args.profile == "style" else "characters"
@@ -327,8 +342,9 @@ def main() -> int:
         run_cmd(["bash", str(run_lora), "--profile", args.profile, "--input", normalized_set], cwd=REPO_ROOT)
 
         if not trained_lora_host.exists():
-            print(f"[warn] trained LoRA not found at expected path: {trained_lora_host}")
-            print("       Check output_dir in TOML (configs/lora/*.toml) and host volume mappings.")
+            print(f"[error] trained LoRA not found at expected path: {trained_lora_host}")
+            print("        Check output_dir in TOML (configs/lora/*.toml) and host volume mappings.")
+            return 2
         else:
             # snapshot into output/kohya with run_id suffix (avoid later overwrite)
             train_dir = REPO_ROOT / "output" / "kohya"
@@ -347,6 +363,10 @@ def main() -> int:
         # If skipping train, assume latest exists and install dir already has it;
         # fall back to the non-archived name.
         trained_lora_filename = trained_lora_host.name
+        if not trained_lora_host.exists():
+            print(f"[error] trained LoRA not found at expected path: {trained_lora_host}")
+            print("        Run training once or provide an existing LoRA file.")
+            return 2
 
     if args.skip_bench:
         print("[done] preprocess/train completed (bench skipped)")
